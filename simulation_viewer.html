@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>VLM Recovery — Simulation Viewer</title>
+<style>
+  :root{
+    --navy:#11151d; --panel:#161b24; --panel2:#0e1219; --ink:#e7edf4;
+    --muted:#8fa0b3; --line:#26303c; --orange:#e5641a; --blue:#3b7dc0;
+    --green:#6edc82; --red:#f0705a; --amber:#f0cd64;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--navy);color:var(--ink);
+    font-family:"Segoe UI",system-ui,Arial,sans-serif}
+  #app{display:grid;grid-template-columns:1fr 360px;grid-template-rows:auto 1fr;
+    height:100vh;gap:10px;padding:10px}
+  header{grid-column:1/3;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+  header h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.2px}
+  header h1 span{color:var(--orange)}
+  .spacer{flex:1}
+  .btn{background:#1d2734;border:1px solid var(--line);color:var(--ink);
+    padding:7px 12px;border-radius:8px;cursor:pointer;font-size:13px}
+  .btn:hover{background:#243141}
+  .btn.primary{background:var(--orange);border-color:var(--orange);color:#fff;font-weight:600}
+  .btn.primary:hover{filter:brightness(1.08)}
+  select,input[type=range]{background:#1d2734;border:1px solid var(--line);color:var(--ink);
+    border-radius:8px;padding:6px 8px;font-size:13px}
+  label.small{font-size:12px;color:var(--muted)}
+  #stage{position:relative;background:#0b0e14;border:1px solid var(--line);
+    border-radius:10px;overflow:hidden}
+  #scene{width:100%;height:100%;display:block}
+  #banner{position:absolute;left:0;right:0;top:0;padding:8px 14px;
+    background:linear-gradient(180deg,rgba(9,12,18,.94),rgba(9,12,18,.55));pointer-events:none}
+  #b-title{font-size:15px;font-weight:700}
+  #b-state{font-size:13px;margin-top:2px;color:var(--blue)}
+  #hint{position:absolute;left:12px;bottom:10px;font-size:11px;color:var(--muted);
+    background:rgba(11,14,20,.6);padding:4px 8px;border-radius:6px;pointer-events:none}
+  aside{display:flex;flex-direction:column;gap:10px;min-height:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
+  .card h2{font-size:11px;letter-spacing:1.5px;color:var(--muted);margin:0 0 8px;font-weight:700}
+  #camwrap{position:relative;background:#0b0e14;border:1px solid var(--line);border-radius:8px;
+    aspect-ratio:1/1;overflow:hidden}
+  #camview{width:100%;height:100%;display:block}
+  #cross{position:absolute;inset:0;pointer-events:none}
+  #camlabel{position:absolute;left:8px;top:6px;font-size:11px;font-weight:700;color:var(--orange)}
+  #diag{font-family:"Consolas",monospace;font-size:13px;line-height:1.5;white-space:pre-wrap;color:#dbe6f2;min-height:96px}
+  #diag .k{color:var(--muted)}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  #trialmeta td{padding:3px 0;color:var(--muted)}
+  #trialmeta td b{color:var(--ink);font-weight:600}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:6px}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:middle}
+  #drop{border:1px dashed var(--line);border-radius:8px;padding:10px;text-align:center;
+    font-size:12px;color:var(--muted)}
+  #drop.drag{border-color:var(--orange);color:var(--ink)}
+  .row{display:flex;align-items:center;gap:8px}
+  #status{font-size:12px;color:var(--muted)}
+  .badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;color:#fff}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>VLM Recovery <span>·</span> Simulation Viewer</h1>
+    <input id="file" type="file" accept=".csv,.py,.txt" style="display:none"/>
+    <button class="btn primary" id="uploadBtn">Upload CSV or .py</button>
+    <label class="small">Trial / scenario</label>
+    <select id="trialSel"></select>
+    <button class="btn" id="prevBtn">‹ Prev</button>
+    <button class="btn" id="playBtn">▶ Play</button>
+    <button class="btn" id="nextBtn">Next ›</button>
+    <label class="small">Speed</label>
+    <input id="speed" type="range" min="0.25" max="2.5" step="0.25" value="1" style="width:90px"/>
+    <div class="spacer"></div>
+    <span id="status">Showing built-in demo scenarios — upload a file to load your own.</span>
+  </header>
+
+  <div id="stage">
+    <canvas id="scene"></canvas>
+    <div id="banner">
+      <div id="b-title">Scenario</div>
+      <div id="b-state">—</div>
+    </div>
+    <div id="hint">drag to orbit · scroll to zoom</div>
+  </div>
+
+  <aside>
+    <div class="card">
+      <h2>EYE-IN-HAND CAMERA — WHAT THE VLM SEES</h2>
+      <div id="camwrap">
+        <canvas id="camview"></canvas>
+        <svg id="cross" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <line x1="50" y1="38" x2="50" y2="46" stroke="#ff5a3c" stroke-width="0.8"/>
+          <line x1="50" y1="54" x2="50" y2="62" stroke="#ff5a3c" stroke-width="0.8"/>
+          <line x1="38" y1="50" x2="46" y2="50" stroke="#ff5a3c" stroke-width="0.8"/>
+          <line x1="54" y1="50" x2="62" y2="50" stroke="#ff5a3c" stroke-width="0.8"/>
+          <circle cx="50" cy="50" r="2.2" fill="none" stroke="#ff5a3c" stroke-width="0.8"/>
+        </svg>
+        <div id="camlabel">gripper target = crosshair</div>
+      </div>
+      <div class="legend">
+        <span><span class="dot" style="background:#e5590d"></span>object</span>
+        <span><span class="dot" style="background:#ff5a3c"></span>gripper target</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>VLM DIAGNOSIS</h2>
+      <div id="diag">—</div>
+    </div>
+
+    <div class="card" style="flex:1;min-height:0;overflow:auto">
+      <h2>TRIAL</h2>
+      <table id="trialmeta"></table>
+      <div id="drop">drop a <b>trials_results.csv</b> or a demo <b>.py</b> file here</div>
+    </div>
+  </aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ============================================================================
+   VLM Recovery — Simulation Viewer
+   Reconstructs the demo simulation visually (Franka-style arm, orange cube,
+   checkered floor) and replays each trial: sabotaged miss -> VLM diagnosis ->
+   recovery. Includes a live eye-in-hand camera view with a target crosshair.
+   Input: trials_results.csv (from demo_trials.py) OR a demo/render .py file.
+============================================================================ */
+"use strict";
+
+// ---------- geometry / timing constants (mirror the python scripts) ----------
+const HOVER_Z = 0.25, DESC_Z = 0.055, DIAG_Z = 0.22, LIFT_Z = 0.27;
+const CAPTURE = 0.028, YAW_TOL = 12;           // success tolerances
+const OBJ_HALF = 0.017;                          // cube half-size (visual)
+const C = {navy:0x11151d, arm:0xcfd3d8, arm2:0xb7bcc4, cube:0xe5590d,
+           floorA:0xa9c0e0, floorB:0xeef1f5};
+
+// ---------- state ----------
+let trials = [];          // [{obj:[x,y], yaw, sab:[dx,dy,dyawDeg], open, closed, recov, ftype, label}]
+let cur = 0, playing = true, speed = 1, clock = 0, timeline = [], totalDur = 0;
+
+// ============================================================================
+//  DATA PARSING
+// ============================================================================
+function num(v){ const n = parseFloat(v); return isFinite(n) ? n : 0; }
+
+function parseCSV(text){
+  const lines = text.trim().split(/\r?\n/).filter(l=>l.length);
+  if(!lines.length) return [];
+  const head = lines[0].split(",").map(s=>s.trim());
+  const idx = {}; head.forEach((h,i)=>idx[h]=i);
+  const has = k=>k in idx;
+  const out = [];
+  for(let i=1;i<lines.length;i++){
+    const c = lines[i].split(",");
+    const x = has("x")?num(c[idx.x]):0.5, y = has("y")?num(c[idx.y]):0;
+    const yaw = has("yaw_deg")?num(c[idx.yaw_deg]):0;
+    const sabPos = has("sab_pos_cm")?num(c[idx.sab_pos_cm]):3.5;
+    const sabYaw = has("sab_yaw_deg")?num(c[idx.sab_yaw_deg]):15;
+    // CSV stores MAGNITUDES only -> synthesize a stable miss direction per trial.
+    const ang = (i*137.508)*Math.PI/180;
+    const sab = [Math.cos(ang)*sabPos/100, Math.sin(ang)*sabPos/100,
+                 (i%2?1:-1)*sabYaw];
+    out.push({
+      obj:[x,y], yaw:yaw*Math.PI/180, sab,
+      open:  has("open_success")  ? /true/i.test(c[idx.open_success])  : false,
+      closed:has("closed_success")? /true/i.test(c[idx.closed_success]): true,
+      recov: has("recoveries")?num(c[idx.recoveries]):1,
+      ftype: has("failure_type")?c[idx.failure_type].trim():"POSITIONAL_OFFSET",
+      label:`Trial ${has("trial")?c[idx.trial]:i} · (${x.toFixed(2)}, ${y.toFixed(2)}) m · yaw ${yaw.toFixed(0)}°`
+    });
+  }
+  return out;
+}
+
+// Best-effort python parser: pull scenario tuples if present, else fall back.
+function parsePY(text){
+  const out = [];
+  const blockRE = /(SCENARIOS|TRIALS|CASES)\s*=\s*\[([\s\S]*?)\]\s*(?:\n|$)/;
+  const m = text.match(blockRE);
+  if(m){
+    // split top-level tuples inside the array by matching (...) groups on lines
+    const body = m[2];
+    const tupleRE = /\(\s*\(([-\d.]+)\s*,\s*([-\d.]+)\)([\s\S]*?)\)\s*,\s*(?:"([^"]*)"|'([^']*)')/g;
+    let t, i=0;
+    while((t = tupleRE.exec(body))!==null){
+      i++;
+      const ox = num(t[1]), oy = num(t[2]);
+      const rest = t[3];
+      const nums = (rest.match(/-?\d+\.?\d*/g)||[]).map(num);
+      // heuristics: first lone number after obj = yaw(deg); a group of 2-3 = sabotage
+      let yaw = 0, sab=[0.035,0.02,15];
+      if(nums.length>=1) yaw = Math.abs(nums[0])<=90 ? nums[0] : 0;
+      // find a parenthesised offset group in rest
+      const off = rest.match(/\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*(?:,\s*(-?\d+\.?\d*))?\s*\)/);
+      if(off) sab = [num(off[1]), num(off[2]), off[3]?num(off[3])*(Math.abs(num(off[3]))<3.2?57.3:1):15];
+      const label = t[4]||t[5]||`Scenario ${i}`;
+      out.push({obj:[ox,oy], yaw:yaw*Math.PI/180, sab:[sab[0],sab[1],sab[2]],
+                open:false, closed:true, recov:1, ftype:"POSITIONAL_OFFSET",
+                label:`${label} · (${ox.toFixed(2)}, ${oy.toFixed(2)}) yaw ${yaw.toFixed(0)}°`});
+    }
+  }
+  if(out.length) return out;
+  // fallback: representative scenarios matching the render videos
+  return defaultTrials(text.includes("dtheta")||text.includes("yaw"));
+}
+
+function defaultTrials(withYaw){
+  const S = [
+    [[0.50, 0.00],   0, [ 0.040,-0.018, 14], "centre · offset RIGHT"],
+    [[0.45, 0.16],  28, [-0.020, 0.038,-18], "back-left · offset FORWARD"],
+    [[0.57,-0.14], -22, [ 0.034, 0.026, 20], "front-right · offset DIAGONAL"],
+    [[0.53, 0.09],  35, [-0.038,-0.020,-16], "far-centre · offset BACK-LEFT"],
+  ];
+  return S.map((s,i)=>({obj:s[0], yaw:(withYaw?s[1]:0)*Math.PI/180,
+    sab:[s[2][0],s[2][1], withYaw?s[2][2]:0], open:false, closed:true, recov:(i%2)+1,
+    ftype:"POSITIONAL_OFFSET",
+    label:`${s[3]} · (${s[0][0].toFixed(2)}, ${s[0][1].toFixed(2)}) yaw ${(withYaw?s[1]:0)}°`}));
+}
+
+// ============================================================================
+//  TIMELINE  (the FSM played out as interpolated keyframes)
+// ============================================================================
+function keyframesFor(tr){
+  const [ox,oy] = tr.obj, oyaw = tr.yaw;
+  const aim = [ox+tr.sab[0], oy+tr.sab[1]];
+  const aimYaw = oyaw + tr.sab[2]*Math.PI/180;
+  const dxcm = (ox-aim[0])*100, dycm=(oy-aim[1])*100, dth=-tr.sab[2];
+  const conf = (0.72 + 0.2*Math.random()).toFixed(2);
+  const K = [];
+  const push=(dur,pos,fing,held,state,color,diag)=>K.push({dur,pos,fing,held,state,color,diag});
+  const sabInfo = `saboteur: ${Math.hypot(tr.sab[0],tr.sab[1])*100|0} cm, ${tr.sab[2].toFixed(0)}° yaw`;
+
+  if(tr.open){                                  // clean grasp, no miss
+    push(0.9,[ox,oy,HOVER_Z],1,false,"APPROACH → GRASP (clean)",C_green,"aim = object\ncentred on crosshair");
+    push(0.7,[ox,oy,DESC_Z],1,false,"descending",C_green,"");
+    push(0.4,[ox,oy,DESC_Z],0,true,"closing — grab",C_green,"");
+    push(0.8,[ox,oy,LIFT_Z],0,true,"SUCCESS (first try)",C_green,"grasped & lifted");
+    return {K, aim, oyaw, meta:{dxcm,dycm,dth,conf,sabInfo}};
+  }
+  // sabotaged miss
+  push(0.9,[aim[0],aim[1],HOVER_Z],1,false,"APPROACH → GRASP (sabotaged aim)",C_amber,`${sabInfo}\nwatch: object off-crosshair`);
+  push(0.7,[aim[0],aim[1],DESC_Z],1,false,"descending on the wrong spot",C_amber,"");
+  push(0.4,[aim[0],aim[1],DESC_Z],0,false,"closing — MISS",C_amber,"grasp FAILED\nopen-loop stops here");
+  push(0.7,[aim[0],aim[1],LIFT_Z],0,false,"lifted empty",C_amber,"object left on table");
+  push(0.6,[aim[0],aim[1],DIAG_Z],1,false,"DIAGNOSE — 3 frames → VLM",C_blue,"capturing eye-in-hand frames…\nobject visible, off-crosshair");
+  push(0.9,[aim[0],aim[1],DIAG_Z],1,false,`CONFIDENCE GATE ${conf} ≥ 0.60 → ACT`,C_blue,
+       `dx = ${dxcm.toFixed(1)} cm\ndy = ${dycm.toFixed(1)} cm\ndθ = ${dth.toFixed(0)}°\nconfidence = ${conf}`);
+  if(tr.closed){
+    push(0.9,[ox,oy,HOVER_Z],1,false,"RECOVER — applying correction",C_green,"re-aiming to corrected target");
+    push(0.7,[ox,oy,DESC_Z],1,false,"descending (corrected)",C_green,"");
+    push(0.4,[ox,oy,DESC_Z],0,true,"closing — grab",C_green,"");
+    push(0.9,[ox,oy,LIFT_Z],0,true,`RECOVERED (attempt ${tr.recov||1})`,C_green,"object centred on crosshair\ngrasped & lifted");
+  } else {
+    push(0.8,[aim[0],aim[1],DESC_Z],0,false,"retry misjudged — still missing",C_red,"");
+    push(0.8,[aim[0],aim[1],LIFT_Z],0,false,"UNRECOVERED — escalated to MCS",C_red,`aborted after ${tr.recov||3} attempts`);
+  }
+  return {K, aim, oyaw, meta:{dxcm,dycm,dth,conf,sabInfo}};
+}
+const C_amber="#f0cd64", C_blue="#8fc7ff", C_green="#7fe38f", C_red="#f0705a";
+
+// ============================================================================
+//  THREE.JS SCENE
+// ============================================================================
+let renderer, camRenderer, scene, mainCam, eihCam;
+let sceneCanvas, camCanvas;
+let armMeshes = {}, gripper, cube, cubeHeld=false;
+let orbit = {yaw:-2.35, pitch:0.62, dist:1.35, target:new THREE.Vector3(0.48,0,0.06)};
+
+// Franka Panda link lengths (7-DOF chain): base column, upper arm, forearm, wrist
+const D1=0.333, LA=0.33, LB=0.32, HWRIST=0.20;
+const SHOULDER_Z=D1;
+
+function makeCheckerTexture(){
+  const s=256, cv=document.createElement("canvas"); cv.width=cv.height=s;
+  const g=cv.getContext("2d"); const n=2, t=s/n;
+  for(let i=0;i<n;i++)for(let j=0;j<n;j++){
+    g.fillStyle = ((i+j)%2) ? "#aec4e2" : "#f2f4f7";
+    g.fillRect(i*t,j*t,t,t);
+  }
+  const tex=new THREE.CanvasTexture(cv);
+  tex.wrapS=tex.wrapT=THREE.RepeatWrapping; tex.repeat.set(14,14);
+  tex.anisotropy=4; tex.needsUpdate=true;
+  return tex;
+}
+
+function cyl(radius,len,color){
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,1,20),
+    new THREE.MeshStandardMaterial({color,roughness:.6,metalness:.15}));
+  m.scale.y=len; scene.add(m); return m;
+}
+function orientCyl(m,a,b){
+  const A=new THREE.Vector3(a[0],a[1],a[2]), B=new THREE.Vector3(b[0],b[1],b[2]);
+  const dir=new THREE.Vector3().subVectors(B,A); const len=dir.length();
+  m.scale.y=Math.max(len,1e-4);
+  m.position.copy(A).add(B).multiplyScalar(0.5);
+  const up=new THREE.Vector3(0,1,0);
+  m.quaternion.setFromUnitVectors(up, dir.clone().normalize());
+}
+// place a fixed-length band (joint collar) at a point, axis aligned to `dir`
+function placeBand(m,p,dir){
+  m.position.set(p[0],p[1],p[2]);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.clone().normalize());
+}
+
+function initThree(){
+  sceneCanvas=document.getElementById("scene");
+  camCanvas=document.getElementById("camview");
+  renderer=new THREE.WebGLRenderer({canvas:sceneCanvas,antialias:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  camRenderer=new THREE.WebGLRenderer({canvas:camCanvas,antialias:true});
+  camRenderer.setPixelRatio(Math.min(devicePixelRatio,2));
+
+  scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x0b0e14);
+  scene.up=new THREE.Vector3(0,0,1);
+
+  mainCam=new THREE.PerspectiveCamera(45,1,0.05,50); mainCam.up.set(0,0,1);
+  eihCam =new THREE.PerspectiveCamera(60,1,0.02,3);  eihCam.up.set(0,0,1);
+
+  scene.add(new THREE.AmbientLight(0xffffff,0.72));
+  const d=new THREE.DirectionalLight(0xffffff,0.85); d.position.set(0.6,-0.4,1.4); scene.add(d);
+  const d2=new THREE.DirectionalLight(0xbcd0ff,0.25); d2.position.set(-0.5,0.6,0.5); scene.add(d2);
+
+  // floor — checkered ground (matches the render videos)
+  const floor=new THREE.Mesh(new THREE.PlaneGeometry(6,6),
+    new THREE.MeshStandardMaterial({map:makeCheckerTexture(),roughness:.95}));
+  floor.position.z=0; scene.add(floor);
+
+  // ---- Franka Panda (7-DOF): white base column, articulated links, joint knuckles ----
+  const PWHITE=0xedeef0, PDARK=0x33373d, PBAND=0x24262b;
+  const knuckle=r=>{const m=new THREE.Mesh(new THREE.SphereGeometry(r,20,20),
+      new THREE.MeshStandardMaterial({color:PDARK,roughness:.5,metalness:.2}));scene.add(m);return m;};
+  const rollBand=r=>{const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,0.05,22),
+      new THREE.MeshStandardMaterial({color:PBAND,roughness:.5,metalness:.25}));scene.add(m);return m;};
+
+  // static white base column: floor (0,0,0) -> shoulder S=(0,0,D1)
+  const col=new THREE.Mesh(new THREE.CylinderGeometry(0.062,0.076,D1,28),
+    new THREE.MeshStandardMaterial({color:PWHITE,roughness:.55}));
+  col.rotation.x=Math.PI/2; col.position.set(0,0,D1/2); scene.add(col);
+  const collar=new THREE.Mesh(new THREE.CylinderGeometry(0.071,0.071,0.05,28),
+    new THREE.MeshStandardMaterial({color:PDARK,roughness:.5}));
+  collar.rotation.x=Math.PI/2; collar.position.set(0,0,D1-0.03); scene.add(collar);
+
+  armMeshes.upper = cyl(0.05,  LA,     PWHITE);  // J2 shoulder -> J4 elbow
+  armMeshes.fore  = cyl(0.045, LB,     PWHITE);  // J4 elbow    -> J6 wrist
+  armMeshes.wrist = cyl(0.04,  HWRIST, PWHITE);  // J6 wrist    -> gripper (vertical)
+  armMeshes.kS = knuckle(0.06);                  // J1/J2 shoulder cluster
+  armMeshes.kE = knuckle(0.055);                 // J4 elbow
+  armMeshes.kW = knuckle(0.05);                  // J6 wrist
+  armMeshes.b3 = rollBand(0.052);                // J3 roll
+  armMeshes.b5 = rollBand(0.047);                // J5 roll
+  armMeshes.b7 = rollBand(0.043);                // J7 tool roll
+
+  // gripper group (points down; yaw applied about world Z)
+  gripper=new THREE.Group(); scene.add(gripper);
+  const wrist=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,0.09,18),
+    new THREE.MeshStandardMaterial({color:C.arm2,roughness:.5}));
+  wrist.rotation.x=Math.PI/2; wrist.position.z=-0.02; gripper.add(wrist);
+  const hand=new THREE.Mesh(new THREE.BoxGeometry(0.10,0.05,0.045),
+    new THREE.MeshStandardMaterial({color:C.arm,roughness:.5}));
+  hand.position.z=-0.075; gripper.add(hand);
+  const fmat=new THREE.MeshStandardMaterial({color:0x9aa0a8,roughness:.5});
+  gripper.fingerL=new THREE.Mesh(new THREE.BoxGeometry(0.014,0.04,0.06),fmat);
+  gripper.fingerR=new THREE.Mesh(new THREE.BoxGeometry(0.014,0.04,0.06),fmat);
+  gripper.fingerL.position.set(-0.04,0,-0.125); gripper.fingerR.position.set(0.04,0,-0.125);
+  gripper.add(gripper.fingerL); gripper.add(gripper.fingerR);
+
+  // eye-in-hand camera attached to gripper, looking straight down (-Z local)
+  eihCam.position.set(0,0,-0.05); eihCam.lookAt(new THREE.Vector3(0,0,-1)); gripper.add(eihCam);
+
+  // cube
+  cube=new THREE.Mesh(new THREE.BoxGeometry(OBJ_HALF*2,OBJ_HALF*2,OBJ_HALF*2),
+    new THREE.MeshStandardMaterial({color:C.cube,roughness:.55}));
+  scene.add(cube);
+
+  // interaction
+  addOrbit(sceneCanvas);
+  window.addEventListener("resize",resize);
+  resize();
+}
+
+function addOrbit(el){
+  let down=false,px=0,py=0;
+  el.addEventListener("pointerdown",e=>{down=true;px=e.clientX;py=e.clientY;});
+  window.addEventListener("pointerup",()=>down=false);
+  window.addEventListener("pointermove",e=>{
+    if(!down)return; orbit.yaw-=(e.clientX-px)*0.008; orbit.pitch+=(e.clientY-py)*0.006;
+    orbit.pitch=Math.max(0.12,Math.min(1.45,orbit.pitch)); px=e.clientX;py=e.clientY;
+  });
+  el.addEventListener("wheel",e=>{e.preventDefault();
+    orbit.dist=Math.max(0.6,Math.min(3,orbit.dist*(1+e.deltaY*0.001)));},{passive:false});
+}
+
+function resize(){
+  const s=document.getElementById("stage");
+  renderer.setSize(s.clientWidth,s.clientHeight,false);
+  mainCam.aspect=s.clientWidth/s.clientHeight; mainCam.updateProjectionMatrix();
+  const cw=document.getElementById("camwrap");
+  camRenderer.setSize(cw.clientWidth,cw.clientHeight,false);
+  eihCam.aspect=1; eihCam.updateProjectionMatrix();
+}
+
+// Pose the 7-DOF Franka Panda for a top-down grasp target (x,y,z) and tool yaw.
+//  J1 base-yaw faces the target · J2/J4 shoulder+elbow pitch form the reach ·
+//  J6 keeps the tool vertical · J3/J5 rolls stay ~0 (unused in a pure top-down
+//  task, as on the real robot) · J7 tool-roll carries the object yaw.
+function poseArm(x,y,z,yaw,finger){
+  // gripper (hand + fingers + eye-in-hand camera) points straight down; yaw = J7
+  gripper.position.set(x,y,z);
+  gripper.rotation.set(0,0,yaw);
+  const sep=0.008+finger*0.032;
+  gripper.fingerL.position.x=-sep; gripper.fingerR.position.x=sep;
+
+  const W=[x, y, z+HWRIST];                        // J6 wrist: directly above the gripper
+  const q1=Math.atan2(W[1],W[0]);                  // J1 base yaw toward the target
+  const f=[Math.cos(q1),Math.sin(q1)];
+  const d=W[0]*f[0]+W[1]*f[1];                     // horizontal reach in the arm plane
+  const v=W[2]-D1;                                  // vertical delta from the shoulder
+  let dist=Math.hypot(d,v); dist=Math.min(dist, LA+LB-1e-3);
+  const a1=Math.atan2(v,d);
+  const a2=Math.acos(Math.max(-1,Math.min(1,(LA*LA+dist*dist-LB*LB)/(2*LA*dist))));
+  const sh=a1+a2;                                   // J2 shoulder pitch (elbow-up)
+  const S=[0,0,D1];
+  const E=[f[0]*LA*Math.cos(sh), f[1]*LA*Math.cos(sh), D1+LA*Math.sin(sh)]; // J4 elbow
+
+  orientCyl(armMeshes.upper, S, E);                // shoulder -> elbow
+  orientCyl(armMeshes.fore,  E, W);                // elbow -> wrist
+  orientCyl(armMeshes.wrist, W, [x,y,z+0.02]);     // wrist -> gripper (vertical, J6->tool)
+  armMeshes.kS.position.set(S[0],S[1],S[2]);
+  armMeshes.kE.position.set(E[0],E[1],E[2]);
+  armMeshes.kW.position.set(W[0],W[1],W[2]);
+
+  const dUp=new THREE.Vector3(E[0]-S[0],E[1]-S[1],E[2]-S[2]);
+  const dFo=new THREE.Vector3(W[0]-E[0],W[1]-E[1],W[2]-E[2]);
+  placeBand(armMeshes.b3,[S[0]+(E[0]-S[0])*0.55, S[1]+(E[1]-S[1])*0.55, S[2]+(E[2]-S[2])*0.55], dUp);
+  placeBand(armMeshes.b5,[E[0]+(W[0]-E[0])*0.55, E[1]+(W[1]-E[1])*0.55, E[2]+(W[2]-E[2])*0.55], dFo);
+  placeBand(armMeshes.b7,[x,y,z+0.02], new THREE.Vector3(0,0,1));
+}
+
+// ============================================================================
+//  PLAYBACK
+// ============================================================================
+function buildTimeline(){
+  const info=keyframesFor(trials[cur]);
+  timeline=info.K; window._info=info; totalDur=timeline.reduce((s,k)=>s+k.dur,0);
+  clock=0;
+  document.getElementById("b-title").textContent=trials[cur].label;
+  fillMeta(trials[cur],info.meta);
+}
+
+function fillMeta(tr,meta){
+  const T=document.getElementById("trialmeta");
+  const row=(k,v)=>`<tr><td>${k}</td><td style="text-align:right"><b>${v}</b></td></tr>`;
+  const okBadge=(b,lab)=>`<span class="badge" style="background:${b?'#3b7dc0':'#c0563b'}">${lab}: ${b?'YES':'NO'}</span>`;
+  T.innerHTML =
+    row("object (x, y)", `${tr.obj[0].toFixed(2)}, ${tr.obj[1].toFixed(2)} m`)+
+    row("object yaw", `${(tr.yaw*180/Math.PI).toFixed(0)}°`)+
+    row("saboteur", `${(Math.hypot(tr.sab[0],tr.sab[1])*100).toFixed(1)} cm, ${tr.sab[2].toFixed(0)}° yaw`)+
+    row("failure type", tr.ftype)+
+    row("recovery attempts", tr.recov)+
+    `<tr><td colspan=2 style="padding-top:8px">${okBadge(tr.open,'open-loop')} ${okBadge(tr.closed,'closed-loop')}</td></tr>`;
+}
+
+function sampleTimeline(t){
+  // returns interpolated {pos,yaw,fing,held,state,color,diag}
+  let acc=0, prev={pos:timeline[0].pos,yaw:0,fing:timeline[0].fing};
+  const first=trials[cur];
+  const startYaw=(first.yaw + first.sab[2]*Math.PI/180);
+  prev.yaw=startYaw;
+  for(let i=0;i<timeline.length;i++){
+    const k=timeline[i];
+    if(t<=acc+k.dur || i===timeline.length-1){
+      const localRaw=(t-acc)/k.dur; const local=Math.max(0,Math.min(1,localRaw));
+      const s=local*local*(3-2*local);            // smoothstep
+      const p0=prev.pos, p1=k.pos;
+      const pos=[p0[0]+(p1[0]-p0[0])*s, p0[1]+(p1[1]-p0[1])*s, p0[2]+(p1[2]-p0[2])*s];
+      // yaw target: recovery aligns to object yaw once past diagnosis; else keeps sabotaged yaw
+      const targYaw = k.held || k.color===C_green ? first.yaw : startYaw;
+      const yaw=prev.yaw+(targYaw-prev.yaw)*s;
+      const fing=prev.fing+(k.fing-prev.fing)*s;
+      return {pos,yaw,fing,held:k.held,state:k.state,color:k.color,diag:k.diag,
+              objYaw: k.held?yaw:first.yaw};
+    }
+    acc+=k.dur;
+    prev={pos:k.pos,yaw:(k.held||k.color===C_green?first.yaw:startYaw),fing:k.fing};
+  }
+}
+
+function frame(dt){
+  if(playing) clock+=dt*speed;
+  if(clock>totalDur+0.6) clock=0;                 // loop
+  const S=sampleTimeline(Math.min(clock,totalDur));
+  if(S){
+    poseArm(S.pos[0],S.pos[1],S.pos[2],S.yaw,S.fing);
+    if(S.held){
+      cube.position.set(S.pos[0],S.pos[1],S.pos[2]-0.125);
+      cube.rotation.set(0,0,S.yaw);
+    } else {
+      cube.position.set(trials[cur].obj[0],trials[cur].obj[1],OBJ_HALF);
+      cube.rotation.set(0,0,trials[cur].obj?trials[cur].yaw:0);
+    }
+    document.getElementById("b-state").textContent=S.state;
+    document.getElementById("b-state").style.color=S.color;
+    document.getElementById("diag").textContent=S.diag||"—";
+  }
+  // main camera from orbit
+  const o=orbit, cp=new THREE.Vector3(
+    o.target.x+o.dist*Math.cos(o.pitch)*Math.cos(o.yaw),
+    o.target.y+o.dist*Math.cos(o.pitch)*Math.sin(o.yaw),
+    o.target.z+o.dist*Math.sin(o.pitch));
+  mainCam.position.copy(cp); mainCam.lookAt(o.target);
+  renderer.render(scene,mainCam);
+  camRenderer.render(scene,eihCam);
+}
+
+let last=performance.now();
+function loop(now){ const dt=Math.min((now-last)/1000,0.05); last=now; frame(dt); requestAnimationFrame(loop); }
+
+// ============================================================================
+//  UI WIRING
+// ============================================================================
+function refreshSelect(){
+  const sel=document.getElementById("trialSel"); sel.innerHTML="";
+  trials.forEach((t,i)=>{const o=document.createElement("option");o.value=i;o.textContent=t.label;sel.appendChild(o);});
+  sel.value=cur;
+}
+function loadTrial(i){ cur=(i+trials.length)%trials.length; document.getElementById("trialSel").value=cur; buildTimeline(); }
+
+function handleFile(file){
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const txt=r.result;
+      const isPy=/\.(py|txt)$/i.test(file.name) || /def\s|import\s/.test(txt.slice(0,400));
+      const parsed = isPy ? parsePY(txt) : parseCSV(txt);
+      if(!parsed.length) throw new Error("no rows/scenarios found");
+      trials=parsed; cur=0; refreshSelect(); buildTimeline();
+      document.getElementById("status").textContent=
+        `Loaded ${trials.length} ${isPy?"scenario(s) from "+file.name:"trial(s) from "+file.name}.`;
+    }catch(e){
+      document.getElementById("status").textContent="Could not parse "+file.name+" — "+e.message;
+    }
+  };
+  r.readAsText(file);
+}
+
+function wireUI(){
+  document.getElementById("uploadBtn").onclick=()=>document.getElementById("file").click();
+  document.getElementById("file").onchange=e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); };
+  document.getElementById("trialSel").onchange=e=>loadTrial(+e.target.value);
+  document.getElementById("prevBtn").onclick=()=>loadTrial(cur-1);
+  document.getElementById("nextBtn").onclick=()=>loadTrial(cur+1);
+  document.getElementById("playBtn").onclick=e=>{playing=!playing;e.target.textContent=playing?"❚❚ Pause":"▶ Play";};
+  document.getElementById("speed").oninput=e=>speed=+e.target.value;
+  const drop=document.getElementById("drop");
+  const stage=document.getElementById("stage");
+  ["dragover"].forEach(ev=>{[drop,stage].forEach(el=>el.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("drag");}));});
+  ["dragleave","drop"].forEach(ev=>{[drop,stage].forEach(el=>el.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("drag");}));});
+  [drop,stage].forEach(el=>el.addEventListener("drop",e=>{e.preventDefault();
+    if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);}));
+  document.getElementById("playBtn").textContent="❚❚ Pause";
+}
+
+// ============================================================================
+//  BOOT
+// ============================================================================
+function boot(){
+  if(typeof THREE==="undefined"){
+    document.getElementById("status").textContent="Three.js failed to load (need internet). Try again online.";
+    return;
+  }
+  trials=defaultTrials(true);
+  initThree(); wireUI(); refreshSelect(); buildTimeline(); requestAnimationFrame(loop);
+}
+window.addEventListener("load",boot);
+</script>
+</body>
+</html>

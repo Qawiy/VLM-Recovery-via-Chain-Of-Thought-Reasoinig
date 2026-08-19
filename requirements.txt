@@ -1,0 +1,18 @@
+# Core simulation + maths
+pybullet
+numpy
+pillow
+
+# Charts and video export
+matplotlib
+imageio
+imageio-ffmpeg
+
+# Real VLM backend (Llama 3.2 Vision through Ollama)
+ollama
+
+# Notes:
+# - Use Python 3.11 (64-bit) so pybullet installs from a prebuilt wheel.
+# - Ollama itself is a separate Windows app (ollama.com/download), not a pip package;
+#   the 'ollama' line above is only the Python client.
+# - imageio-ffmpeg bundles an ffmpeg binary for writing MP4s.
